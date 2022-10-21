@@ -2,3 +2,7 @@
 	path = quiz
 	url = https://github.com/vuhailongkl97/quiz
 	branch = main
+[submodule "urlshort"]
+	path = urlshort
+	url = https://github.com/vuhailongkl97/urlshort.git
+	branch = master
