@@ -44,29 +44,43 @@ func parseConfig(file string) (config, error) {
 	return cfg, nil
 }
 
+var (
+	counter         int       = 6
+	default_counter int       = 6
+	restTime        time.Time = time.Now()
+)
+
 func serveHTTP(r http.ResponseWriter, req *http.Request) {
-	defer req.Body.Close()
-	body, err := ioutil.ReadAll(req.Body)
+	counter--
 
-	if err != nil {
-		log.Printf("Error when reading %v\n", err)
-		http.Error(r, "error", http.StatusBadRequest)
-	} else {
-		r.Write([]byte("ok"))
-		fmt.Printf("body is [%v]\n", string(body))
-		rdr, err := os.Open(string(body))
+	if counter == 0 {
+		counter = default_counter
+		restTime = time.Now().Add(20 * time.Minute)
+	}
+
+	if time.Now().After(restTime) {
+		defer req.Body.Close()
+		body, err := ioutil.ReadAll(req.Body)
+
 		if err != nil {
-			fmt.Println(err)
+			log.Printf("Error when reading %v\n", err)
+			http.Error(r, "error", http.StatusBadRequest)
 		} else {
-			if dg != nil {
-				_, err := dg.ChannelFileSendWithMessage(ChannelID, time.Now().String(), "wallpapers.png", rdr)
-				if err != nil {
-					fmt.Println(err)
-				}
+			fmt.Printf("body is [%v]\n", string(body))
+			rdr, err := os.Open(string(body))
+			if err != nil {
+				fmt.Println(err)
 			} else {
-				fmt.Println("dg is nil")
+				if dg != nil {
+					_, err := dg.ChannelFileSendWithMessage(ChannelID, time.Now().String(), string(body), rdr)
+					if err != nil {
+						fmt.Println(err)
+					}
+				} else {
+					fmt.Println("dg is nil")
+				}
+				r.Write([]byte("ok"))
 			}
-
 		}
 	}
 }
