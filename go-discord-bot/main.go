@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -48,6 +47,7 @@ var (
 	counter         int       = 6
 	default_counter int       = 6
 	restTime        time.Time = time.Now()
+	logFilePath     string    = "/tmp/serveHTTP"
 )
 
 func serveHTTP(r http.ResponseWriter, req *http.Request) {
@@ -66,18 +66,17 @@ func serveHTTP(r http.ResponseWriter, req *http.Request) {
 			log.Printf("Error when reading %v\n", err)
 			http.Error(r, "error", http.StatusBadRequest)
 		} else {
-			fmt.Printf("body is [%v]\n", string(body))
 			rdr, err := os.Open(string(body))
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 			} else {
 				if dg != nil {
 					_, err := dg.ChannelFileSendWithMessage(ChannelID, time.Now().String(), string(body), rdr)
 					if err != nil {
-						fmt.Println(err)
+						log.Println(err)
 					}
 				} else {
-					fmt.Println("dg is nil")
+					log.Println("dg is nil")
 				}
 				r.Write([]byte("ok"))
 			}
@@ -94,6 +93,15 @@ func runServer() {
 
 func main() {
 
+	logFile, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer logFile.Close()
+
+	log.SetOutput(logFile)
+
+	//	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	// get Token and Channel ID in Yaml file
 	cfg, err := parseConfig("config.yaml")
 
@@ -102,7 +110,7 @@ func main() {
 		return
 	}
 
-	fmt.Println(cfg)
+	log.Println(cfg)
 
 	ChannelID = cfg.ChannelID
 	go runServer()
@@ -110,7 +118,7 @@ func main() {
 	// Create a new Discord session using the provided bot token.
 	dg, err = discordgo.New("Bot " + cfg.Token)
 	if err != nil {
-		fmt.Println("error creating Discord session,", err)
+		log.Println("error creating Discord session,", err)
 		return
 	}
 
@@ -124,7 +132,7 @@ func main() {
 	for {
 		err = dg.Open()
 		if err != nil {
-			fmt.Println("error opening connection,", err)
+			log.Println("error opening connection,", err)
 		} else {
 			break
 		}
@@ -134,7 +142,6 @@ func main() {
 
 	dg.ChannelMessageSend(ChannelID, "Bot started")
 	// Wait here until CTRL-C or other term signal is received.
-	fmt.Println("Bot is now running. Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 	<-sc
@@ -153,12 +160,11 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	fmt.Println(m.ChannelID)
 	switch m.Content {
 	case "!enable":
 		res, err := setIOT(false)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			res = err.Error()
 		}
 		s.ChannelMessageSend(m.ChannelID, res)
@@ -166,11 +172,14 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	case "!disable":
 		res, err := setIOT(true)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			res = err.Error()
 		}
 		s.ChannelMessageSend(m.ChannelID, res)
 	default:
+
+		fileStat, _ := os.Stat(logFilePath)
+		log.Printf("curr log file size is %v", fileStat.Size())
 		if strings.Contains(m.Content, "!threshold") {
 			substr := strings.Split(m.Content, " ")
 			var res string
@@ -181,7 +190,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 				threshold, _ := strconv.ParseInt(substr[1], 10, 32)
 				res, err = setIOTThreshold(int(threshold))
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 					res = err.Error()
 				}
 			}
