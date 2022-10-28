@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -154,10 +156,42 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			res = err.Error()
 		}
 		s.ChannelMessageSend(m.ChannelID, res)
+	default:
+		if strings.Contains(m.Content, "!threshold") {
+			substr := strings.Split(m.Content, " ")
+			var res string
+			var err error
+			if len(substr) != 2 {
+				res = "invalid command"
+			} else {
+				threshold, _ := strconv.ParseInt(substr[1], 10, 32)
+				res, err = setIOTThreshold(int(threshold))
+				if err != nil {
+					fmt.Println(err)
+					res = err.Error()
+				}
+			}
+			s.ChannelMessageSend(m.ChannelID, res)
+		}
 	}
 
 }
 
+func setIOTThreshold(threshold int) (string, error) {
+	if threshold < 0 || threshold > 100 {
+		return "overflow or underflow", nil
+	}
+	request_str := "http://localhost:18080/threshold/" + strconv.Itoa(threshold)
+	resp, err := http.Get(request_str)
+
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	data, _ := ioutil.ReadAll(resp.Body)
+	return string(data), nil
+
+}
 func setIOT(disable bool) (string, error) {
 	var resp *http.Response
 	var err error
