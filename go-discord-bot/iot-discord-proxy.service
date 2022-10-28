@@ -1,0 +1,15 @@
+[Unit]
+Description= iot Discord proxy
+After=network-online.target firewalld.service containerd.service
+After=syslog.target
+Wants=network-online.target
+Requires=docker.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/iot-discord-proxy
+ExecReload=/bin/kill -s HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
+

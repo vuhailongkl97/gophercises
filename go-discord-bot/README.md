@@ -1,5 +1,5 @@
 # USAGE
-+ update your token and your chat's channelID in config.yaml  
++ update your token and your chat's channelID in /etc/config.yaml  
 
 # APIs
 ## localhost
@@ -13,3 +13,14 @@
 
 # Log
 Location: /tmp/serveHTTP
+
+# Install 
+``` 
+sudo cp iot-discord-proxy /usr/bin
+sudo cp iot-discord-proxy.service /etc/systemd/system/iot-discord-proxy.service  
+sudo chmod 640 /etc/systemd/system/iot-discord-proxy.service
+sudo systemctl daemon-reload
+systemctl enable iot-discord-proxy.service
+systemctl start iot-discord-proxy.service
+```
+

@@ -1,4 +1,4 @@
-module iot
+module iot-discord-proxy
 
 go 1.19
 

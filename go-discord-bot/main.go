@@ -107,7 +107,7 @@ func main() {
 
 	//	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	// get Token and Channel ID in Yaml file
-	cfg, err := parseConfig("config.yaml")
+	cfg, err := parseConfig("/etc/config.yaml")
 
 	if err != nil {
 		log.Fatal(err)
