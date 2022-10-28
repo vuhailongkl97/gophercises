@@ -10,3 +10,6 @@
 
 * `!enable` disable app inside localhost
 * `!disable` enable app inside localhost
+
+# Log
+Location: /tmp/serveHTTP
