@@ -1,3 +1,6 @@
+# USAGE
++ update your token and your chat's channelID in config.yaml  
+
 # APIs
 ## localhost
 * Request to send image with its location  
