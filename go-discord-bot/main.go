@@ -47,6 +47,7 @@ var (
 	counter         int       = 6
 	default_counter int       = 6
 	restTime        time.Time = time.Now()
+	lastTimeUpdate  time.Time = time.Now()
 	logFilePath     string    = "/tmp/serveHTTP"
 )
 
@@ -57,7 +58,7 @@ func serveHTTP(r http.ResponseWriter, req *http.Request) {
 		counter--
 		if counter == 0 {
 			counter = default_counter
-			restTime = time.Now().Add(2 * time.Second)
+			restTime = time.Now().Add(20 * time.Minute)
 		}
 		body, err := ioutil.ReadAll(req.Body)
 
@@ -79,6 +80,10 @@ func serveHTTP(r http.ResponseWriter, req *http.Request) {
 				}
 				r.Write([]byte("ok"))
 			}
+			if counter < default_counter && lastTimeUpdate.Add(2*time.Second).After(time.Now()) {
+				counter++
+			}
+			lastTimeUpdate = time.Now()
 		}
 	}
 }
