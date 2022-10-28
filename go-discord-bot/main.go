@@ -140,9 +140,38 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	fmt.Println(m.ChannelID)
 	switch m.Content {
 	case "!enable":
-		fmt.Println("enable iot")
+		res, err := setIOT(false)
+		if err != nil {
+			fmt.Println(err)
+			res = err.Error()
+		}
+		s.ChannelMessageSend(m.ChannelID, res)
+
 	case "!disable":
-		fmt.Println("disable iot")
+		res, err := setIOT(true)
+		if err != nil {
+			fmt.Println(err)
+			res = err.Error()
+		}
+		s.ChannelMessageSend(m.ChannelID, res)
 	}
 
+}
+
+func setIOT(disable bool) (string, error) {
+	var resp *http.Response
+	var err error
+	if disable == true {
+		resp, err = http.Get("http://localhost:18080/disable/1")
+	} else {
+		resp, err = http.Get("http://localhost:18080/disable/0")
+	}
+
+	if err != nil {
+		log.Println(err)
+		return "", err
+	}
+	defer resp.Body.Close()
+	data, _ := ioutil.ReadAll(resp.Body)
+	return string(data), nil
 }
