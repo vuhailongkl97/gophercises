@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,25 +19,80 @@ type config struct {
 	ChannelID string `yaml:"channel"`
 }
 
-func main() {
+var (
+	dg        *discordgo.Session
+	ChannelID string
+)
 
-	// get Token and Channel ID in Yaml file
-	content, err := ioutil.ReadFile("config.yaml")
+func parseConfig(file string) (config, error) {
+	content, err := ioutil.ReadFile(file)
+	var cfg config
 
 	if err != nil {
 		log.Fatal(err)
+		return cfg, err
 	}
-	var cfg config
 	err = yaml.Unmarshal(content, &cfg)
 
 	if err != nil {
 		log.Fatal(err)
+		return cfg, err
+	}
+
+	return cfg, nil
+}
+
+func serveHTTP(r http.ResponseWriter, req *http.Request) {
+	defer req.Body.Close()
+	body, err := ioutil.ReadAll(req.Body)
+
+	if err != nil {
+		log.Printf("Error when reading %v\n", err)
+		http.Error(r, "error", http.StatusBadRequest)
+	} else {
+		r.Write([]byte("ok"))
+		fmt.Printf("body is [%v]\n", string(body))
+		rdr, err := os.Open(string(body))
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			if dg != nil {
+				_, err := dg.ChannelFileSendWithMessage(ChannelID, time.Now().String(), "wallpapers.png", rdr)
+				if err != nil {
+					fmt.Println(err)
+				}
+			} else {
+				fmt.Println("dg is nil")
+			}
+
+		}
+	}
+}
+func runServer() {
+	http.HandleFunc("/updated", serveHTTP)
+	err := http.ListenAndServe(":1234", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func main() {
+
+	// get Token and Channel ID in Yaml file
+	cfg, err := parseConfig("config.yaml")
+
+	if err != nil {
+		log.Fatal(err)
+		return
 	}
 
 	fmt.Println(cfg)
 
+	ChannelID = cfg.ChannelID
+	go runServer()
+
 	// Create a new Discord session using the provided bot token.
-	dg, err := discordgo.New("Bot " + cfg.Token)
+	dg, err = discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		fmt.Println("error creating Discord session,", err)
 		return
@@ -49,12 +105,18 @@ func main() {
 	dg.Identify.Intents = discordgo.IntentsGuildMessages
 
 	// Open a websocket connection to Discord and begin listening.
-	err = dg.Open()
-	if err != nil {
-		fmt.Println("error opening connection,", err)
-		return
+	for {
+		err = dg.Open()
+		if err != nil {
+			fmt.Println("error opening connection,", err)
+		} else {
+			break
+		}
+		time.Sleep(5 * time.Second)
 	}
+	//rdr, err := os.Open("wallpapers.jpg")
 
+	dg.ChannelMessageSend(ChannelID, "Bot started")
 	// Wait here until CTRL-C or other term signal is received.
 	fmt.Println("Bot is now running. Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
@@ -75,17 +137,12 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	if m.Content == "!random" {
-		rdr, err := os.Open("wallpapers.jpg")
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			_, err := s.ChannelFileSendWithMessage(m.ChannelID, time.Now().String(), "wallpapers.png", rdr)
-			fmt.Printf("channelID %v\n", m.ChannelID)
-			if err != nil {
-				fmt.Println(err)
-			}
-		}
+	fmt.Println(m.ChannelID)
+	switch m.Content {
+	case "!enable":
+		fmt.Println("enable iot")
+	case "!disable":
+		fmt.Println("disable iot")
 	}
 
 }
