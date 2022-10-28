@@ -51,15 +51,14 @@ var (
 )
 
 func serveHTTP(r http.ResponseWriter, req *http.Request) {
-	counter--
 
-	if counter == 0 {
-		counter = default_counter
-		restTime = time.Now().Add(20 * time.Minute)
-	}
-
+	defer req.Body.Close()
 	if time.Now().After(restTime) {
-		defer req.Body.Close()
+		counter--
+		if counter == 0 {
+			counter = default_counter
+			restTime = time.Now().Add(2 * time.Second)
+		}
 		body, err := ioutil.ReadAll(req.Body)
 
 		if err != nil {
