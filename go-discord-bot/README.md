@@ -1,3 +1,5 @@
+# PURPOSE
+support this https://github.com/vuhailongkl97/iot
 # USAGE
 + update your token and your chat's channelID in /etc/config.yaml  
 
