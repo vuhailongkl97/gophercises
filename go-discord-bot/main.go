@@ -167,6 +167,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	switch m.Content {
 	case "!enable":
 		res, err := setIOT(false)
+		counter = default_counter
 		if err != nil {
 			log.Println(err)
 			res = err.Error()
@@ -182,8 +183,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageSend(m.ChannelID, res)
 	default:
 
-		fileStat, _ := os.Stat(logFilePath)
-		log.Printf("curr log file size is %v", fileStat.Size())
+		//fileStat, _ := os.Stat(logFilePath)
+		//log.Printf("curr log file size is %v", fileStat.Size())
 		if strings.Contains(m.Content, "!threshold") {
 			substr := strings.Split(m.Content, " ")
 			var res string
