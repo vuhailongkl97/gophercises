@@ -1,2 +1,7 @@
 token: 123
 channel: 123 
+ThresholdSetAPI: http://localhost:18080/threshold/
+EnableSetAPI: http://localhost:18080/disable/0
+DisableSetAPI: http://localhost:18080/disable/1
+RestTime: 20
+ListenAddr: http://localhost:1234

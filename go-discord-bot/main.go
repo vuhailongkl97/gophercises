@@ -16,18 +16,23 @@ import (
 )
 
 type config struct {
-	Token     string `yaml:"token"`
-	ChannelID string `yaml:"channel"`
+	Token           string `yaml:"token"`
+	ChannelID       string `yaml:"channel"`
+	ThresholdSetAPI string `yaml:"ThresholdSetAPI"`
+	EnableSetAPI    string `yaml:"EnableSetAPI"`
+	DisableSetAPI   string `yaml:"DisableSetAPI"`
+	RestTime        int    `yaml:"RestTime"`
+	ListenAddr      string `yaml:"ListenAddr"`
 }
 
 var (
 	dg        *discordgo.Session
 	ChannelID string
 )
+var cfg config
 
 func parseConfig(file string) (config, error) {
 	content, err := ioutil.ReadFile(file)
-	var cfg config
 
 	if err != nil {
 		log.Fatal(err)
@@ -49,17 +54,21 @@ var (
 	restTime        time.Time = time.Now()
 	lastTimeUpdate  time.Time = time.Now()
 	logFilePath     string    = "/tmp/serveHTTP"
+	cfgFilePath     string    = "/etc/config.yaml"
 )
 
 func serveHTTP(r http.ResponseWriter, req *http.Request) {
 
 	defer req.Body.Close()
 	if time.Now().After(restTime) {
-		counter--
-		if counter == 0 {
-			counter = default_counter
-			restTime = time.Now().Add(20 * time.Minute)
+		counter = default_counter
+		restTime = time.Now().Add(time.Duration(cfg.RestTime) * time.Minute)
+	} else {
+		if counter > 0 {
+			counter--
 		}
+	}
+	if counter > 0 {
 		body, err := ioutil.ReadAll(req.Body)
 
 		if err != nil {
@@ -79,9 +88,6 @@ func serveHTTP(r http.ResponseWriter, req *http.Request) {
 					log.Println("dg is nil")
 				}
 				r.Write([]byte("ok"))
-			}
-			if counter < default_counter && lastTimeUpdate.Add(2*time.Second).After(time.Now()) {
-				counter++
 			}
 			lastTimeUpdate = time.Now()
 		}
@@ -105,13 +111,10 @@ func main() {
 
 	log.SetOutput(logFile)
 
-	//	log.SetFlags(log.Lshortfile | log.LstdFlags)
-	// get Token and Channel ID in Yaml file
-	cfg, err := parseConfig("/etc/config.yaml")
+	cfg, err := parseConfig(cfgFilePath)
 
 	if err != nil {
 		log.Fatal(err)
-		return
 	}
 
 	log.Println(cfg)
@@ -142,10 +145,9 @@ func main() {
 		}
 		time.Sleep(5 * time.Second)
 	}
-	//rdr, err := os.Open("wallpapers.jpg")
 
 	dg.ChannelMessageSend(ChannelID, "Bot started")
-	// Wait here until CTRL-C or other term signal is received.
+
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 	<-sc
@@ -159,7 +161,6 @@ func main() {
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// Ignore all messages created by the bot itself
-	// This isn't required in this specific example but it's a good practice.
 	if m.Author.ID == s.State.User.ID {
 		return
 	}
@@ -168,6 +169,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	case "!enable":
 		res, err := setIOT(false)
 		counter = default_counter
+		restTime = time.Now()
 		if err != nil {
 			log.Println(err)
 			res = err.Error()
@@ -182,9 +184,6 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 		s.ChannelMessageSend(m.ChannelID, res)
 	default:
-
-		//fileStat, _ := os.Stat(logFilePath)
-		//log.Printf("curr log file size is %v", fileStat.Size())
 		if strings.Contains(m.Content, "!threshold") {
 			substr := strings.Split(m.Content, " ")
 			var res string
@@ -209,7 +208,7 @@ func setIOTThreshold(threshold int) (string, error) {
 	if threshold < 0 || threshold > 100 {
 		return "overflow or underflow", nil
 	}
-	request_str := "http://localhost:18080/threshold/" + strconv.Itoa(threshold)
+	request_str := cfg.ThresholdSetAPI + strconv.Itoa(threshold)
 	resp, err := http.Get(request_str)
 
 	if err != nil {
@@ -224,9 +223,9 @@ func setIOT(disable bool) (string, error) {
 	var resp *http.Response
 	var err error
 	if disable == true {
-		resp, err = http.Get("http://localhost:18080/disable/1")
+		resp, err = http.Get(cfg.DisableSetAPI)
 	} else {
-		resp, err = http.Get("http://localhost:18080/disable/0")
+		resp, err = http.Get(cfg.EnableSetAPI)
 	}
 
 	if err != nil {
