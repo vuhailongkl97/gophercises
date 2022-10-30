@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -26,7 +28,6 @@ type config struct {
 }
 
 var (
-	dg        *discordgo.Session
 	ChannelID string
 )
 var cfg config
@@ -35,17 +36,15 @@ func parseConfig(file string) (config, error) {
 	content, err := ioutil.ReadFile(file)
 
 	if err != nil {
-		log.Fatal(err)
 		return cfg, err
 	}
 	err = yaml.Unmarshal(content, &cfg)
 
 	if err != nil {
-		log.Fatal(err)
 		return cfg, err
 	}
 
-	return cfg, nil
+	return cfg, err
 }
 
 var (
@@ -57,6 +56,97 @@ var (
 	cfgFilePath     string    = "/etc/config.yaml"
 )
 
+type NotifyInterface interface {
+	ChannelFileSendWithMessage(config, string, io.Reader) error
+	Open() error
+	Close() error
+}
+
+type DiscordAdaper struct {
+	adaptee *discordgo.Session
+}
+
+var notifierInterface NotifyInterface = nil
+
+func (tee *DiscordAdaper) ChannelFileSendWithMessage(cfg config, fileName string, rdr io.Reader) error {
+	_, err := tee.adaptee.ChannelFileSendWithMessage(cfg.ChannelID, time.Now().String(), fileName, rdr)
+	return err
+}
+func (tee *DiscordAdaper) Open() error {
+	return tee.adaptee.Open()
+}
+
+func (tee *DiscordAdaper) Close() error {
+	return tee.adaptee.Close()
+}
+
+type HardwareInterface interface {
+	Enable() error
+	Disable() error
+	setParam(string, string) error
+}
+
+type JetsonNano struct {
+	addr string
+}
+
+func (j *JetsonNano) Enable() error {
+	var resp *http.Response
+	var err error
+	resp, err = http.Get(cfg.EnableSetAPI)
+
+	if err != nil {
+		log.Println(err)
+		return fmt.Errorf("%v", err)
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+func (j *JetsonNano) Disable() error {
+
+	var resp *http.Response
+	resp, err := http.Get(cfg.DisableSetAPI)
+
+	if err != nil {
+		log.Println(err)
+		return fmt.Errorf("%v", err)
+	}
+
+	defer resp.Body.Close()
+	return nil
+}
+
+func (j *JetsonNano) setParam(k string, v string) error {
+	var err error
+	switch k {
+	case "threshold":
+		var value int64
+		value, err = strconv.ParseInt(v, 10, 32)
+		if err != nil {
+			fmt.Println(err)
+			break
+		}
+		err = setThreshold(int(value))
+		break
+	default:
+		break
+	}
+
+	return err
+}
+
+func setThreshold(threshold int) error {
+	request_str := cfg.ThresholdSetAPI + strconv.Itoa(threshold)
+	resp, err := http.Get(request_str)
+	if err != nil {
+		err = fmt.Errorf("%v", err)
+	} else {
+		defer resp.Body.Close()
+	}
+	return err
+
+}
 func serveHTTP(r http.ResponseWriter, req *http.Request) {
 
 	defer req.Body.Close()
@@ -70,7 +160,6 @@ func serveHTTP(r http.ResponseWriter, req *http.Request) {
 	}
 	if counter > 0 {
 		body, err := ioutil.ReadAll(req.Body)
-
 		if err != nil {
 			log.Printf("Error when reading %v\n", err)
 			http.Error(r, "error", http.StatusBadRequest)
@@ -78,16 +167,22 @@ func serveHTTP(r http.ResponseWriter, req *http.Request) {
 			rdr, err := os.Open(string(body))
 			if err != nil {
 				log.Println(err)
+				r.WriteHeader(http.StatusInternalServerError)
 			} else {
-				if dg != nil {
-					_, err := dg.ChannelFileSendWithMessage(ChannelID, time.Now().String(), string(body), rdr)
+				if notifierInterface != nil {
+					err = notifierInterface.ChannelFileSendWithMessage(cfg, string(body), rdr)
+
 					if err != nil {
 						log.Println(err)
+						r.WriteHeader(http.StatusInternalServerError)
 					}
 				} else {
-					log.Println("dg is nil")
+					log.Println("notifierInterface is nil")
+					r.WriteHeader(http.StatusInternalServerError)
 				}
-				r.Write([]byte("ok"))
+				if err == nil {
+					r.Write([]byte("ok"))
+				}
 			}
 			lastTimeUpdate = time.Now()
 		}
@@ -101,43 +196,25 @@ func runServer() {
 	}
 }
 
-func main() {
-
-	logFile, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
-	if err != nil {
-		log.Panic(err)
-	}
-	defer logFile.Close()
-
-	log.SetOutput(logFile)
-
-	cfg, err := parseConfig(cfgFilePath)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println(cfg)
-
-	ChannelID = cfg.ChannelID
-	go runServer()
-
+func initDiscord() NotifyInterface {
 	// Create a new Discord session using the provided bot token.
-	dg, err = discordgo.New("Bot " + cfg.Token)
+	dg, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
-		log.Println("error creating Discord session,", err)
-		return
+		log.Fatalf("error creating Discord session %v ", err)
+		return nil
 	}
 
-	// Register the messageCreate func as a callback for MessageCreate events.
 	dg.AddHandler(messageCreate)
 
 	// In this example, we only care about receiving message events.
 	dg.Identify.Intents = discordgo.IntentsGuildMessages
 
-	// Open a websocket connection to Discord and begin listening.
+	dgSession := new(DiscordAdaper)
+	dgSession.adaptee = dg
+	notifierInterface = dgSession
+
 	for {
-		err = dg.Open()
+		err = notifierInterface.Open()
 		if err != nil {
 			log.Println("error opening connection,", err)
 		} else {
@@ -147,7 +224,42 @@ func main() {
 	}
 
 	dg.ChannelMessageSend(ChannelID, "Bot started")
+	return notifierInterface
+}
 
+func initLog() *os.File {
+
+	logFile, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		log.Panic(err)
+		return nil
+	}
+	log.SetOutput(logFile)
+	return logFile
+}
+
+var (
+	jetson HardwareInterface
+)
+
+func initHardware() HardwareInterface {
+	jetson = new(JetsonNano)
+	return jetson
+}
+func main() {
+	logFile := initLog()
+	initHardware()
+	defer logFile.Close()
+	cfg, err := parseConfig(cfgFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println(cfg)
+
+	ChannelID = cfg.ChannelID
+	go runServer()
+	dg := initDiscord()
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 	<-sc
@@ -160,14 +272,19 @@ func main() {
 // message is created on any channel that the authenticated bot has access to.
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
+	var res string = "ok"
 	// Ignore all messages created by the bot itself
 	if m.Author.ID == s.State.User.ID {
+		return
+	}
+	if jetson == nil {
+		log.Println("jetson is null")
 		return
 	}
 
 	switch m.Content {
 	case "!enable":
-		res, err := setIOT(false)
+		err := jetson.Enable()
 		counter = default_counter
 		restTime = time.Now()
 		if err != nil {
@@ -177,7 +294,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageSend(m.ChannelID, res)
 
 	case "!disable":
-		res, err := setIOT(true)
+		err := jetson.Disable()
 		if err != nil {
 			log.Println(err)
 			res = err.Error()
@@ -186,15 +303,12 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	default:
 		if strings.Contains(m.Content, "!threshold") {
 			substr := strings.Split(m.Content, " ")
-			var res string
 			var err error
 			if len(substr) != 2 {
 				res = "invalid command"
 			} else {
-				threshold, _ := strconv.ParseInt(substr[1], 10, 32)
-				res, err = setIOTThreshold(int(threshold))
+				err = jetson.setParam("threshold", substr[1])
 				if err != nil {
-					log.Println(err)
 					res = err.Error()
 				}
 			}
@@ -202,37 +316,4 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 
-}
-
-func setIOTThreshold(threshold int) (string, error) {
-	if threshold < 0 || threshold > 100 {
-		return "overflow or underflow", nil
-	}
-	request_str := cfg.ThresholdSetAPI + strconv.Itoa(threshold)
-	resp, err := http.Get(request_str)
-
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	data, _ := ioutil.ReadAll(resp.Body)
-	return string(data), nil
-
-}
-func setIOT(disable bool) (string, error) {
-	var resp *http.Response
-	var err error
-	if disable == true {
-		resp, err = http.Get(cfg.DisableSetAPI)
-	} else {
-		resp, err = http.Get(cfg.EnableSetAPI)
-	}
-
-	if err != nil {
-		log.Println(err)
-		return "", err
-	}
-	defer resp.Body.Close()
-	data, _ := ioutil.ReadAll(resp.Body)
-	return string(data), nil
 }
