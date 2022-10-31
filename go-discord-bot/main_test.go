@@ -118,3 +118,8 @@ func TestServeHTTPmax(t *testing.T) {
 func TestInitHardware(t *testing.T) {
 
 }
+
+func TestReadStatus(t *testing.T) {
+	str := readStatus()
+	fmt.Println(str)
+}

@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -305,7 +307,8 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	case "!reb":
 		syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
-
+	case "!status":
+		s.ChannelMessageSend(m.ChannelID, readStatus())
 	default:
 		if strings.Contains(m.Content, "!threshold") {
 			substr := strings.Split(m.Content, " ")
@@ -322,4 +325,29 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}
 
+}
+
+func readStatus() string {
+	l_cmd := exec.Command("free", "-m")
+	stdout, err := l_cmd.StdoutPipe()
+	if err != nil {
+		return err.Error()
+	}
+
+	if err := l_cmd.Start(); err != nil {
+		return err.Error()
+	}
+
+	rdr := bufio.NewReader(stdout)
+	buf := ""
+	for {
+		line, _, err := rdr.ReadLine()
+		if err != nil {
+			break
+		}
+		buf += string(line)
+		buf += "\n"
+	}
+
+	return buf
 }
