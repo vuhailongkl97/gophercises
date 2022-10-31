@@ -69,7 +69,8 @@ type DiscordAdaper struct {
 var notifierInterface NotifyInterface = nil
 
 func (tee *DiscordAdaper) ChannelFileSendWithMessage(cfg config, fileName string, rdr io.Reader) error {
-	_, err := tee.adaptee.ChannelFileSendWithMessage(cfg.ChannelID, time.Now().String(), fileName, rdr)
+	str := time.Now().Format("2006-01-02 15:04:05 cnt: ") + strconv.Itoa(counter)
+	_, err := tee.adaptee.ChannelFileSendWithMessage(cfg.ChannelID, str, fileName, rdr)
 	return err
 }
 func (tee *DiscordAdaper) Open() error {
@@ -150,7 +151,8 @@ func setThreshold(threshold int) error {
 func serveHTTP(r http.ResponseWriter, req *http.Request) {
 
 	defer req.Body.Close()
-	if time.Now().After(restTime) {
+	if time.Now().After(restTime) ||
+		time.Now().After(lastTimeUpdate.Add(time.Duration(cfg.RestTime)*time.Minute)) {
 		counter = default_counter
 		restTime = time.Now().Add(time.Duration(cfg.RestTime) * time.Minute)
 	} else {
@@ -300,6 +302,10 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			res = err.Error()
 		}
 		s.ChannelMessageSend(m.ChannelID, res)
+
+	case "!reb":
+		syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+
 	default:
 		if strings.Contains(m.Content, "!threshold") {
 			substr := strings.Split(m.Content, " ")
