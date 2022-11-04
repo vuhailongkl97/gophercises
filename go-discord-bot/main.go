@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -22,9 +23,7 @@ import (
 type config struct {
 	Token           string `yaml:"token"`
 	ChannelID       string `yaml:"channel"`
-	ThresholdSetAPI string `yaml:"ThresholdSetAPI"`
-	EnableSetAPI    string `yaml:"EnableSetAPI"`
-	DisableSetAPI   string `yaml:"DisableSetAPI"`
+	UploadConfigAPI string `yaml:"UploadConfigAPI"`
 	RestTime        int    `yaml:"RestTime"`
 	ListenAddr      string `yaml:"ListenAddr"`
 }
@@ -84,19 +83,17 @@ func (tee *DiscordAdaper) Close() error {
 }
 
 type HardwareInterface interface {
-	Enable() error
-	Disable() error
-	setParam(string, string) error
+	UploadConfig(string) error
 }
 
 type JetsonNano struct {
 	addr string
 }
 
-func (j *JetsonNano) Enable() error {
+func (j *JetsonNano) UploadConfig(cf string) error {
 	var resp *http.Response
 	var err error
-	resp, err = http.Get(cfg.EnableSetAPI)
+	resp, err = http.Post(cfg.UploadConfigAPI, "application/json", strings.NewReader(cf))
 
 	if err != nil {
 		log.Println(err)
@@ -106,50 +103,6 @@ func (j *JetsonNano) Enable() error {
 	return nil
 }
 
-func (j *JetsonNano) Disable() error {
-
-	var resp *http.Response
-	resp, err := http.Get(cfg.DisableSetAPI)
-
-	if err != nil {
-		log.Println(err)
-		return fmt.Errorf("%v", err)
-	}
-
-	defer resp.Body.Close()
-	return nil
-}
-
-func (j *JetsonNano) setParam(k string, v string) error {
-	var err error
-	switch k {
-	case "threshold":
-		var value int64
-		value, err = strconv.ParseInt(v, 10, 32)
-		if err != nil {
-			fmt.Println(err)
-			break
-		}
-		err = setThreshold(int(value))
-		break
-	default:
-		break
-	}
-
-	return err
-}
-
-func setThreshold(threshold int) error {
-	request_str := cfg.ThresholdSetAPI + strconv.Itoa(threshold)
-	resp, err := http.Get(request_str)
-	if err != nil {
-		err = fmt.Errorf("%v", err)
-	} else {
-		defer resp.Body.Close()
-	}
-	return err
-
-}
 func serveHTTP(r http.ResponseWriter, req *http.Request) {
 
 	defer req.Body.Close()
@@ -243,17 +196,17 @@ func initLog() *os.File {
 }
 
 var (
-	jetson HardwareInterface
+	localDevice HardwareInterface
 )
 
 func initHardware() HardwareInterface {
-	jetson = new(JetsonNano)
-	return jetson
+	localDevice = new(JetsonNano)
+	return localDevice
 }
 func main() {
-	logFile := initLog()
+	//logFile := initLog()
 	initHardware()
-	defer logFile.Close()
+	//defer logFile.Close()
 	cfg, err := parseConfig(cfgFilePath)
 	if err != nil {
 		log.Fatal(err)
@@ -272,6 +225,22 @@ func main() {
 	dg.Close()
 }
 
+type Detectionconfig struct {
+	BoardName             string
+	CfgFile               string
+	CorrectRate           float32
+	Delay4CAP             int16
+	NameFile              string
+	NotifyAPI             string
+	Port                  int16
+	QUEUE_ENTRY_LIMIT_MIN int16
+	Src                   string
+	TIME_FORCUS           int16
+	TIME_SKIP             int16
+	Threshold             float32
+	WeightFile            string
+}
+
 // This function will be called (due to AddHandler above) every time a new
 // message is created on any channel that the authenticated bot has access to.
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -281,50 +250,45 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.ID == s.State.User.ID {
 		return
 	}
-	if jetson == nil {
-		log.Println("jetson is null")
-		return
-	}
 
 	switch m.Content {
-	case "!enable":
-		err := jetson.Enable()
-		counter = default_counter
-		restTime = time.Now()
-		if err != nil {
-			log.Println(err)
-			res = err.Error()
-		}
-		s.ChannelMessageSend(m.ChannelID, res)
-
-	case "!disable":
-		err := jetson.Disable()
-		if err != nil {
-			log.Println(err)
-			res = err.Error()
-		}
-		s.ChannelMessageSend(m.ChannelID, res)
-
 	case "!reb":
 		syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 	case "!status":
 		s.ChannelMessageSend(m.ChannelID, readStatus())
 	default:
-		if strings.Contains(m.Content, "!threshold") {
-			substr := strings.Split(m.Content, " ")
-			var err error
-			if len(substr) != 2 {
-				res = "invalid command"
-			} else {
-				err = jetson.setParam("threshold", substr[1])
-				if err != nil {
-					res = err.Error()
-				}
-			}
-			s.ChannelMessageSend(m.ChannelID, res)
+
+		if localDevice == nil {
+			log.Println("localDevice is null")
+			return
 		}
+		rdr := strings.NewReader(m.Content)
+		de := json.NewDecoder(rdr)
+		var ret Detectionconfig
+		err := de.Decode(&ret)
+		if err != nil {
+			res = err.Error()
+		} else {
+			log.Println(ret)
+			if testDetectionConfig(ret) == false {
+				res = "cfg error"
+			} else if err := localDevice.UploadConfig(m.Content); err != nil {
+				res = err.Error()
+			}
+		}
+		s.ChannelMessageSend(m.ChannelID, res)
+	}
+}
+
+func testDetectionConfig(cf Detectionconfig) bool {
+	if cf.BoardName == "" || cf.CfgFile == "" || cf.NameFile == "" || cf.NotifyAPI == "" || cf.Src == "" || cf.WeightFile == "" {
+		return false
 	}
 
+	if cf.CorrectRate < 0.01 || cf.Delay4CAP == 0 || cf.Port == 0 || cf.QUEUE_ENTRY_LIMIT_MIN == 0 || cf.TIME_FORCUS == 0 || cf.TIME_SKIP == 0 || cf.Threshold < 0.01 {
+		return false
+	}
+	return true
 }
 
 func readStatus() string {
