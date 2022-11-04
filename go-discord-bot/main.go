@@ -59,6 +59,7 @@ var (
 
 type NotifyInterface interface {
 	ChannelFileSendWithMessage(config, string, io.Reader) error
+	ChannelMessageSend(config, string) error
 	Open() error
 	Close() error
 }
@@ -74,6 +75,12 @@ func (tee *DiscordAdaper) ChannelFileSendWithMessage(cfg config, fileName string
 	_, err := tee.adaptee.ChannelFileSendWithMessage(cfg.ChannelID, str, fileName, rdr)
 	return err
 }
+
+func (tee *DiscordAdaper) ChannelMessageSend(cfg config, content string) error {
+	_, err := tee.adaptee.ChannelMessageSend(cfg.ChannelID, content)
+	return err
+}
+
 func (tee *DiscordAdaper) Open() error {
 	return tee.adaptee.Open()
 }
@@ -103,6 +110,22 @@ func (j *JetsonNano) UploadConfig(cf string) error {
 	return nil
 }
 
+type JsonData struct {
+	Key     string `json:"key"`
+	Content string `json:"content"`
+}
+
+func ParseJsonData(data string) (JsonData, error) {
+	var jdata JsonData
+	rdr := strings.NewReader(data)
+	de := json.NewDecoder(rdr)
+	err := de.Decode(&jdata)
+
+	if err != nil {
+		return JsonData{}, err
+	}
+	return jdata, nil
+}
 func serveHTTP(r http.ResponseWriter, req *http.Request) {
 
 	defer req.Body.Close()
@@ -121,27 +144,38 @@ func serveHTTP(r http.ResponseWriter, req *http.Request) {
 			log.Printf("Error when reading %v\n", err)
 			http.Error(r, "error", http.StatusBadRequest)
 		} else {
-			rdr, err := os.Open(string(body))
+			data, err := ParseJsonData(string(body))
 			if err != nil {
-				log.Println(err)
 				r.WriteHeader(http.StatusInternalServerError)
 			} else {
-				if notifierInterface != nil {
-					err = notifierInterface.ChannelFileSendWithMessage(cfg, string(body), rdr)
-
+				if data.Key == "img_path" {
+					rdr, err := os.Open(data.Content)
 					if err != nil {
 						log.Println(err)
 						r.WriteHeader(http.StatusInternalServerError)
+					} else {
+						if notifierInterface != nil {
+							err = notifierInterface.ChannelFileSendWithMessage(cfg, "img.jpg", rdr)
+
+							if err != nil {
+								log.Println(err)
+								r.WriteHeader(http.StatusInternalServerError)
+							}
+						} else {
+							log.Println("notifierInterface is nil")
+							r.WriteHeader(http.StatusInternalServerError)
+						}
+						if err == nil {
+							r.Write([]byte("ok"))
+						}
 					}
+					lastTimeUpdate = time.Now()
 				} else {
-					log.Println("notifierInterface is nil")
-					r.WriteHeader(http.StatusInternalServerError)
-				}
-				if err == nil {
-					r.Write([]byte("ok"))
+					if notifierInterface != nil {
+						notifierInterface.ChannelMessageSend(cfg, data.Content)
+					}
 				}
 			}
-			lastTimeUpdate = time.Now()
 		}
 	}
 }
@@ -203,6 +237,7 @@ func initHardware() HardwareInterface {
 	localDevice = new(JetsonNano)
 	return localDevice
 }
+
 func main() {
 	//logFile := initLog()
 	initHardware()
