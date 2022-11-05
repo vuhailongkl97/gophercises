@@ -274,6 +274,7 @@ type Detectionconfig struct {
 	TIME_SKIP             int16
 	Threshold             float32
 	WeightFile            string
+	Status                bool
 }
 
 // This function will be called (due to AddHandler above) every time a new
