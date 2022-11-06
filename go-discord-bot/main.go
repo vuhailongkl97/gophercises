@@ -49,8 +49,8 @@ func parseConfig(file string) (config, error) {
 }
 
 var (
-	counter         int       = 3
-	default_counter int       = 3
+	counter         int       = 4
+	default_counter int       = 4
 	restTime        time.Time = time.Now()
 	lastTimeUpdate  time.Time = time.Now()
 	logFilePath     string    = "/tmp/serveHTTP"
