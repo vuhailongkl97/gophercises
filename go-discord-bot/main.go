@@ -306,9 +306,10 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			res = err.Error()
 		} else {
 			log.Println(ret)
-			if testDetectionConfig(ret) == false {
+			by, err := json.Marshal(ret)
+			if testDetectionConfig(ret) == false || err != nil {
 				res = "cfg error"
-			} else if err := localDevice.UploadConfig(m.Content); err != nil {
+			} else if err := localDevice.UploadConfig(string(by)); err != nil {
 				res = err.Error()
 			}
 		}
