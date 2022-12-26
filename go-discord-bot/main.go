@@ -261,20 +261,20 @@ func main() {
 }
 
 type Detectionconfig struct {
-	BoardName             string
-	CfgFile               string
-	CorrectRate           float32
-	Delay4CAP             int16
-	NameFile              string
-	NotifyAPI             string
-	Port                  int16
-	QUEUE_ENTRY_LIMIT_MIN int16
-	Src                   string
-	TIME_FORCUS           int16
-	TIME_SKIP             int16
-	Threshold             float32
-	WeightFile            string
-	Status                bool
+	BoardName             string  `json:",omitempty"`
+	CfgFile               string  `json:",omitempty"`
+	CorrectRate           float32 `json:",omitempty"`
+	Delay4CAP             int16   `json:",omitempty"`
+	NameFile              string  `json:",omitempty"`
+	NotifyAPI             string  `json:",omitempty"`
+	Port                  int16   `json:",omitempty"`
+	QUEUE_ENTRY_LIMIT_MIN int16   `json:",omitempty"`
+	Src                   string  `json:",omitempty"`
+	TIME_FORCUS           int16   `json:",omitempty"`
+	TIME_SKIP             int16   `json:",omitempty"`
+	Threshold             float32 `json:",omitempty"`
+	WeightFile            string  `json:",omitempty"`
+	Status                bool    `json:",omitempty"`
 }
 
 // This function will be called (due to AddHandler above) every time a new
@@ -318,11 +318,28 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 func testDetectionConfig(cf Detectionconfig) bool {
-	if cf.BoardName == "" || cf.CfgFile == "" || cf.NameFile == "" || cf.NotifyAPI == "" || cf.Src == "" || cf.WeightFile == "" {
+
+	if cf.CorrectRate != 0 && cf.CorrectRate < 0.01 {
 		return false
 	}
 
-	if cf.CorrectRate < 0.01 || cf.Delay4CAP == 0 || cf.Port == 0 || cf.QUEUE_ENTRY_LIMIT_MIN == 0 || cf.TIME_FORCUS == 0 || cf.TIME_SKIP == 0 || cf.Threshold < 0.01 {
+	if cf.Port != 0 && cf.Port < 1000 {
+		return false
+	}
+
+	if cf.QUEUE_ENTRY_LIMIT_MIN != 0 && cf.QUEUE_ENTRY_LIMIT_MIN < 1 {
+		return false
+	}
+
+	if cf.TIME_FORCUS != 0 && cf.TIME_FORCUS < 1 {
+		return false
+	}
+
+	if cf.TIME_SKIP != 0 && cf.TIME_SKIP < 1 {
+		return false
+	}
+
+	if cf.Threshold != 0 && cf.Threshold < 0.01 {
 		return false
 	}
 	return true
